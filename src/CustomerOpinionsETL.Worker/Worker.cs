@@ -9,16 +9,16 @@ namespace CustomerOpinionsETL.Worker;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly EtlService _etlService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _configuration;
 
     public Worker(
         ILogger<Worker> logger,
-        EtlService etlService,
+        IServiceScopeFactory scopeFactory,
         IConfiguration configuration)
     {
         _logger = logger;
-        _etlService = etlService;
+        _scopeFactory = scopeFactory;
         _configuration = configuration;
     }
 
@@ -28,8 +28,12 @@ public class Worker : BackgroundService
 
         try
         {
+            // Crear un scope para resolver servicios Scoped
+            using var scope = _scopeFactory.CreateScope();
+            var etlService = scope.ServiceProvider.GetRequiredService<EtlService>();
+
             // Ejecutar el proceso ETL
-            var result = await _etlService.ExecuteAsync(stoppingToken);
+            var result = await etlService.ExecuteAsync(stoppingToken);
 
             if (result.Success)
             {
