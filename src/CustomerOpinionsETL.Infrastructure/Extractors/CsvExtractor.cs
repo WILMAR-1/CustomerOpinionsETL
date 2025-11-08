@@ -29,31 +29,55 @@ public class CsvExtractor : IExtractor
 
     public async Task<IEnumerable<OpinionDto>> ExtractAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Iniciando extracción de CSV desde: {FilePath}", _options.FilePath);
+        // Construir ruta absoluta si es relativa
+        var filePath = _options.FilePath;
+        if (!Path.IsPathRooted(filePath))
+        {
+            var baseDir = AppContext.BaseDirectory;
+
+            // Primero intentar desde el directorio base (bin/Debug/net9.0)
+            // Esto funciona cuando el archivo se copia al output durante el build
+            var localPath = Path.Combine(baseDir, filePath);
+
+            if (File.Exists(localPath))
+            {
+                filePath = localPath;
+            }
+            else
+            {
+                // Si no existe localmente, navegar desde bin/Debug/net9.0 hasta el directorio del proyecto
+                var projectDir = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+                filePath = Path.Combine(projectDir, filePath);
+            }
+        }
+
+        _logger.LogInformation("Iniciando extracción de CSV desde: {FilePath}", filePath);
         var startTime = DateTime.UtcNow;
 
         try
         {
-            if (!File.Exists(_options.FilePath))
+            if (!File.Exists(filePath))
             {
-                _logger.LogError("El archivo CSV no existe: {FilePath}", _options.FilePath);
-                throw new FileNotFoundException($"No se encontró el archivo: {_options.FilePath}");
+                _logger.LogError("El archivo CSV no existe: {FilePath}", filePath);
+                _logger.LogInformation("Ruta base: {BaseDir}", AppContext.BaseDirectory);
+                throw new FileNotFoundException($"No se encontró el archivo: {filePath}");
             }
 
             var opinions = new List<OpinionDto>();
 
-            using (var reader = new StreamReader(_options.FilePath))
-            using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+            // Usar el mismo método del proyecto de ejemplo
+            using var reader = new StringReader(await File.ReadAllTextAsync(filePath, System.Text.Encoding.UTF8));
+            using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HasHeaderRecord = _options.HasHeaderRecord,
                 Delimiter = _options.Delimiter,
                 MissingFieldFound = null,
                 BadDataFound = null
-            }))
-            {
-                var records = csv.GetRecordsAsync<CsvOpinionDto>(cancellationToken);
+            });
 
-                await foreach (var record in records.WithCancellation(cancellationToken))
+            await foreach (var record in csv.GetRecordsAsync<CsvOpinionDto>(cancellationToken))
+            {
+                if (record != null)
                 {
                     var opinion = MapToOpinionDto(record);
                     opinions.Add(opinion);
