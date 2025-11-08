@@ -198,11 +198,11 @@ def main():
     end_time = datetime.now()
     elapsed = (end_time - start_time).total_seconds()
 
-    print(f"\n✓ Generación completada!")
+    print(f"\n[OK] Generacion completada!")
     print(f"  Total de registros: {NUM_RECORDS:,}")
     print(f"  Tiempo total: {elapsed:.2f} segundos")
     print(f"  Tasa promedio: {NUM_RECORDS/elapsed:,.0f} registros/segundo")
-    print(f"  Tamaño del archivo: {OUTPUT_FILE.stat().st_size / (1024*1024):.2f} MB")
+    print(f"  Tamano del archivo: {OUTPUT_FILE.stat().st_size / (1024*1024):.2f} MB")
     print(f"\nArchivo generado: {OUTPUT_FILE}")
 
 if __name__ == "__main__":
