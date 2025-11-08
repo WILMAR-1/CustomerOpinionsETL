@@ -29,7 +29,7 @@ public class CsvExtractor : IExtractor
 
     public async Task<IEnumerable<OpinionDto>> ExtractAsync(CancellationToken cancellationToken = default)
     {
-        // Construir ruta absoluta si es relativa (similar al proyecto de ejemplo)
+        // Construir ruta absoluta si es relativa
         var filePath = _options.FilePath;
         if (!Path.IsPathRooted(filePath))
         {
@@ -53,18 +53,19 @@ public class CsvExtractor : IExtractor
 
             var opinions = new List<OpinionDto>();
 
-            using (var reader = new StreamReader(filePath))
-            using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+            // Usar el mismo método del proyecto de ejemplo
+            using var reader = new StringReader(await File.ReadAllTextAsync(filePath, System.Text.Encoding.UTF8));
+            using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HasHeaderRecord = _options.HasHeaderRecord,
                 Delimiter = _options.Delimiter,
                 MissingFieldFound = null,
                 BadDataFound = null
-            }))
-            {
-                var records = csv.GetRecordsAsync<CsvOpinionDto>(cancellationToken);
+            });
 
-                await foreach (var record in records.WithCancellation(cancellationToken))
+            await foreach (var record in csv.GetRecordsAsync<CsvOpinionDto>(cancellationToken))
+            {
+                if (record != null)
                 {
                     var opinion = MapToOpinionDto(record);
                     opinions.Add(opinion);
