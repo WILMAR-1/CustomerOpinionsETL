@@ -70,12 +70,35 @@ El modelo de datos implementa un **Esquema Estrella (Star Schema)** con las sigu
   * `DimTime`
   * `DimSource`
 
+## Ramas de Desarrollo
+
+El proyecto sigue un modelo de desarrollo por funcionalidades usando ramas:
+
+### `feature/etl-extraction-v1` (Completada)
+- Implementación del proceso ETL completo
+- Extracción desde CSV, Base de Datos y API
+- Transformación y validación de datos
+- Carga BULK optimizada al Data Warehouse
+- Arquitectura Clean con separación de DTOs
+
+### `feature/api-v2` (En desarrollo)
+- API REST para consulta del Data Warehouse
+- Endpoints analíticos para reportes
+- Exposición de métricas y tendencias de opiniones
+- Documentación con Swagger/OpenAPI
+
 ## Ejecución
 
 Para ejecutar el proceso ETL:
 
 ```bash
-dotnet run --project Presentation
+dotnet run --project src/CustomerOpinionsETL.Worker
+```
+
+Para ejecutar la API (próximamente):
+
+```bash
+dotnet run --project src/CustomerOpinionsETL.Api
 ```
 
 ## Licencia
