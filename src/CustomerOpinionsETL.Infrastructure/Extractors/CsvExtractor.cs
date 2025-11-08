@@ -29,20 +29,31 @@ public class CsvExtractor : IExtractor
 
     public async Task<IEnumerable<OpinionDto>> ExtractAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Iniciando extracción de CSV desde: {FilePath}", _options.FilePath);
+        // Construir ruta absoluta si es relativa (similar al proyecto de ejemplo)
+        var filePath = _options.FilePath;
+        if (!Path.IsPathRooted(filePath))
+        {
+            // Navegar desde bin/Debug/net9.0 hasta el directorio del proyecto
+            var baseDir = AppContext.BaseDirectory;
+            var projectDir = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+            filePath = Path.Combine(projectDir, filePath);
+        }
+
+        _logger.LogInformation("Iniciando extracción de CSV desde: {FilePath}", filePath);
         var startTime = DateTime.UtcNow;
 
         try
         {
-            if (!File.Exists(_options.FilePath))
+            if (!File.Exists(filePath))
             {
-                _logger.LogError("El archivo CSV no existe: {FilePath}", _options.FilePath);
-                throw new FileNotFoundException($"No se encontró el archivo: {_options.FilePath}");
+                _logger.LogError("El archivo CSV no existe: {FilePath}", filePath);
+                _logger.LogInformation("Ruta base: {BaseDir}", AppContext.BaseDirectory);
+                throw new FileNotFoundException($"No se encontró el archivo: {filePath}");
             }
 
             var opinions = new List<OpinionDto>();
 
-            using (var reader = new StreamReader(_options.FilePath))
+            using (var reader = new StreamReader(filePath))
             using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HasHeaderRecord = _options.HasHeaderRecord,
