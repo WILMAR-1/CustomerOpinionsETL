@@ -1,49 +1,74 @@
-# Gestión de Ramas del Proyecto
+# GestiÃ³n de Ramas del Proyecto
 
 Este documento describe la estrategia de ramas utilizada en el proyecto Customer Opinions ETL.
 
 ## Ramas Principales
 
 ### `master`
-Rama principal de desarrollo. Contiene la versión más actualizada del proyecto.
+Rama principal de desarrollo. Contiene la versiÃ³n mÃ¡s actualizada del proyecto con todas las funcionalidades completadas y mergeadas.
 
-### `feature/etl-extraction-v1`
-Rama dedicada a la **Práctica 1: Proceso de Extracción ETL**.
+### `feature/etl-extraction-v1` âœ… COMPLETADA
+Rama dedicada a la **PrÃ¡ctica 1: Proceso de ExtracciÃ³n ETL**.
+
+**Estado:** Mergeada a master
 
 **Contenido:**
 - Worker Service con proceso ETL completo
 - Extractores: CSV, Base de Datos, API REST
-- DataLoader para carga en DW_Opiniones
+- DataLoader con operaciones BULK puras (sin bucles)
 - Clean Architecture (Domain, Application, Infrastructure, Worker)
+- SeparaciÃ³n de DTOs en archivos individuales (Models/Dto/)
 - Logging con Serilog
-- Procesamiento asíncrono y paralelo
+- Procesamiento asÃ­ncrono y paralelo
+- Procesamiento de 500K+ registros en ~4 segundos
 
 **Tag asociado:** `v1.0-extraction`
 
 **Uso:**
 ```bash
-# Cambiar a la rama de extracción
+# Cambiar a la rama de extracciÃ³n
 git checkout feature/etl-extraction-v1
 
-# Ver el código de la práctica 1
+# Ver el cÃ³digo de la prÃ¡ctica 1
+git log --oneline
+```
+
+### `feature/api-v2` ðŸš€ EN DESARROLLO
+Rama activa para la **PrÃ¡ctica 2: API REST para consulta del Data Warehouse**.
+
+**Estado:** En desarrollo
+
+**Contenido planificado:**
+- Proyecto ASP.NET Core Web API
+- Endpoints para consultas analÃ­ticas del Data Warehouse
+- Repositorio de lectura optimizado
+- DTOs de respuesta para API
+- DocumentaciÃ³n con Swagger/OpenAPI
+- Filtros, paginaciÃ³n y ordenamiento
+- MÃ©tricas, agregaciones y tendencias
+- CORS y seguridad bÃ¡sica
+
+**Uso:**
+```bash
+# Cambiar a la rama de API
+git checkout feature/api-v2
+
+# Ver progreso
 git log --oneline
 ```
 
 ## Estructura de Ramas Futuras
 
-### `feature/etl-transformation-v2` (Futura)
-Para la práctica de transformación de datos.
+### `feature/advanced-analytics-v3` (Futura)
+Para anÃ¡lisis avanzados, tendencias temporales y predicciones con ML.
 
-### `feature/etl-load-optimization-v3` (Futura)
-Para optimizaciones de carga y rendimiento.
+### `feature/dashboard-v4` (Futura)
+Para el mÃ³dulo de visualizaciÃ³n/dashboard con grÃ¡ficos interactivos.
 
-### `feature/api-rest-v4` (Futura)
-Para agregar la Web API con endpoints de consulta e inserción.
+### `feature/real-time-etl-v5` (Futura)
+Para procesamiento en tiempo real con cambios incrementales (CDC).
 
-### `feature/dashboard-v5` (Futura)
-Para el módulo de visualización/dashboard.
-
-## Comandos Útiles
+## Comandos Ãštiles
 
 ### Ver todas las ramas
 ```bash
@@ -57,53 +82,65 @@ git tag -l
 
 ### Cambiar de rama
 ```bash
-# A la rama de extracción (Práctica 1)
+# A la rama de extracciÃ³n (PrÃ¡ctica 1)
 git checkout feature/etl-extraction-v1
+
+# A la rama de API (PrÃ¡ctica 2)
+git checkout feature/api-v2
 
 # De vuelta a master
 git checkout master
 ```
 
-### Crear nueva rama para siguiente práctica
+### Crear nueva rama para siguiente prÃ¡ctica
 ```bash
 # Desde master
 git checkout master
 
-# Crear rama para transformación
-git checkout -b feature/etl-transformation-v2
+# Crear rama para nueva funcionalidad
+git checkout -b feature/nueva-funcionalidad-v3
 ```
 
 ### Ver diferencias entre ramas
 ```bash
-git diff master..feature/etl-extraction-v1
+git diff master..feature/api-v2
 ```
 
 ## Estrategia de Versionado
 
-| Versión | Tag | Rama | Descripción |
-|---------|-----|------|-------------|
-| v1.0 | v1.0-extraction | feature/etl-extraction-v1 | Proceso de Extracción |
-| v2.0 | v2.0-transformation | feature/etl-transformation-v2 | Proceso de Transformación |
-| v3.0 | v3.0-load-complete | feature/etl-load-optimization-v3 | ETL Completo Optimizado |
-| v4.0 | v4.0-api | feature/api-rest-v4 | Web API REST |
-| v5.0 | v5.0-dashboard | feature/dashboard-v5 | Dashboard de Visualización |
+| VersiÃ³n | Tag | Rama | Estado | DescripciÃ³n |
+|---------|-----|------|--------|-------------|
+| v1.0 | v1.0-extraction | feature/etl-extraction-v1 | âœ… Completada | Proceso ETL Completo con Extractores |
+| v2.0 | v2.0-api | feature/api-v2 | ðŸš€ En desarrollo | Web API REST para consultas |
+| v3.0 | v3.0-analytics | feature/advanced-analytics-v3 | ðŸ“… Futura | AnÃ¡lisis Avanzados |
+| v4.0 | v4.0-dashboard | feature/dashboard-v4 | ðŸ“… Futura | Dashboard de VisualizaciÃ³n |
+| v5.0 | v5.0-realtime | feature/real-time-etl-v5 | ðŸ“… Futura | ETL en Tiempo Real |
 
-## Integración
+## IntegraciÃ³n
 
-Cuando una práctica esté completa y aprobada:
+Cuando una prÃ¡ctica estÃ¡ completa y aprobada:
 
-1. Asegurar que todos los cambios están commiteados
-2. Mergear la rama a master:
+1. Asegurar que todos los cambios estÃ©n commiteados en la rama feature
+2. Cambiar a master: `git checkout master`
+3. Mergear la rama feature a master:
    ```bash
-   git checkout master
-   git merge feature/etl-extraction-v1
+   git merge feature/nombre-rama --no-ff -m "Mensaje descriptivo"
    ```
-3. Crear tag de release
-4. Push al repositorio remoto (cuando esté configurado)
+4. Resolver conflictos si existen
+5. Crear tag de release: `git tag -a v1.0-extraction -m "Release v1.0"`
+6. Push al repositorio remoto: `git push origin master --tags`
 
 ## Notas
 
-- Cada práctica debe tener su propia rama
+- Cada prÃ¡ctica/funcionalidad debe tener su propia rama feature
 - Mantener master siempre en estado estable
-- Usar tags para marcar entregas
+- Usar tags para marcar entregas y releases
 - Documentar cambios significativos en commits descriptivos
+- Separar DTOs, modelos y lÃ³gica en archivos individuales
+- Seguir convenciones de nomenclatura de commits:
+  - `Feat:` para nuevas funcionalidades
+  - `Fix:` para correcciÃ³n de bugs
+  - `Refactor:` para refactorizaciÃ³n de cÃ³digo
+  - `Docs:` para documentaciÃ³n
+  - `Perf:` para mejoras de rendimiento
+  - `Sync:` para sincronizaciÃ³n entre ramas
