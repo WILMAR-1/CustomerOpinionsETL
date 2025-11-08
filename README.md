@@ -1,14 +1,16 @@
+---
+
 # Customer Opinions ETL System
 
 Sistema **ETL (Extract, Transform, Load)** desarrollado en **.NET 9** para la extracción, transformación y carga de opiniones de clientes desde múltiples fuentes de datos hacia un **Data Warehouse** analítico.
 
 ## Información del Proyecto
 
-**Institución:** Instituto Tecnológico de Las Américas – ITLA
-**Asignatura:** Electiva 1 - Actividad 1: Desarrollo del Proceso ETL en .NET(Arquitectura)Tarea
+**Institución:** Universidad
+**Asignatura:** Electiva 1 - Diseño e Implementación de Data Warehouse
 **Estudiante:** Wilmar Gómez de la Cruz (2024-0103)
 **Profesor:** Francis Ramírez
-**Periodo:** C-3
+**Periodo:** Noviembre 2025
 
 ## Descripción
 
@@ -80,5 +82,5 @@ dotnet run --project Presentation
 
 Proyecto académico desarrollado exclusivamente con fines educativos.
 
-
+---
 
