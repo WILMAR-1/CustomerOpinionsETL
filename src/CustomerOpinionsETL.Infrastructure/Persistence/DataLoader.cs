@@ -1,8 +1,8 @@
-using System.Collections.Concurrent;
 using CustomerOpinionsETL.Application.Configuration;
 using CustomerOpinionsETL.Domain.Entities;
 using CustomerOpinionsETL.Domain.Interfaces;
 using CustomerOpinionsETL.Infrastructure.Data;
+using EFCore.BulkExtensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,20 +10,14 @@ using Microsoft.Extensions.Options;
 namespace CustomerOpinionsETL.Infrastructure.Persistence;
 
 /// <summary>
-/// Implementación del DataLoader para cargar datos en la base de datos analítica
-/// Optimizado para alto rendimiento con procesamiento por lotes y caché de dimensiones
+/// Implementación del DataLoader con operaciones BULK puras sin bucles
+/// Optimizado para máximo rendimiento con 500K+ registros
 /// </summary>
 public class DataLoader : IDataLoader
 {
     private readonly DwOpinionsContext _context;
     private readonly ILogger<DataLoader> _logger;
     private readonly EtlOptions _options;
-
-    // Cachés para lookups de dimensiones (optimización de rendimiento)
-    private readonly ConcurrentDictionary<string, int> _productCache = new();
-    private readonly ConcurrentDictionary<string, int> _customerCache = new();
-    private readonly ConcurrentDictionary<int, int> _dateCache = new();
-    private readonly ConcurrentDictionary<string, int> _channelCache = new();
 
     public DataLoader(
         DwOpinionsContext context,
@@ -39,7 +33,7 @@ public class DataLoader : IDataLoader
         IEnumerable<OpinionDto> opinions,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Iniciando carga de datos a la base de datos analítica");
+        _logger.LogInformation("Iniciando carga BULK de datos a la base de datos analítica");
         var startTime = DateTime.UtcNow;
 
         try
@@ -47,31 +41,41 @@ public class DataLoader : IDataLoader
             var opinionsList = opinions.ToList();
             _logger.LogInformation("Total de opiniones a cargar: {Count}", opinionsList.Count);
 
-            // Prellenar cachés de dimensiones existentes
-            await PreloadDimensionCachesAsync(cancellationToken);
+            // PASO 1: Procesar dimensiones en BULK (sin bucles)
+            await ProcessProductDimensionBulkAsync(opinionsList, cancellationToken);
+            await ProcessCustomerDimensionBulkAsync(opinionsList, cancellationToken);
+            await ProcessDateDimensionBulkAsync(opinionsList, cancellationToken);
+            await ProcessChannelDimensionBulkAsync(opinionsList, cancellationToken);
 
-            var totalInserted = 0;
+            // PASO 2: Cargar cachés de dimensiones (sin bucles - usando ToDictionary)
+            var productLookup = await LoadProductLookupAsync(cancellationToken);
+            var customerLookup = await LoadCustomerLookupAsync(cancellationToken);
+            var dateLookup = await LoadDateLookupAsync(cancellationToken);
+            var channelLookup = await LoadChannelLookupAsync(cancellationToken);
 
-            // Procesar en lotes para optimizar rendimiento
-            var batches = opinionsList
-                .Select((opinion, index) => new { opinion, index })
-                .GroupBy(x => x.index / _options.BatchSize)
-                .Select(g => g.Select(x => x.opinion).ToList());
+            // PASO 3: Crear todos los registros de hechos en una sola operación (sin bucles)
+            var factOpinions = opinionsList
+                .Select(o => new FactOpinion
+                {
+                    ProductKey = productLookup[$"{o.SourceProductId}_{o.ProductName}"],
+                    CustomerKey = customerLookup[$"{o.SourceCustomerId}_{o.CustomerName}"],
+                    DateKey = dateLookup[int.Parse(o.OpinionDate.ToString("yyyyMMdd"))],
+                    ChannelKey = channelLookup[o.ChannelName],
+                    Rating = o.Rating,
+                    SentimentScore = o.SentimentScore,
+                    OpinionCount = 1
+                })
+                .ToList();
 
-            foreach (var batch in batches)
-            {
-                var inserted = await ProcessBatchAsync(batch, cancellationToken);
-                totalInserted += inserted;
+            // PASO 4: Bulk insert de todos los hechos de una vez
+            await _context.BulkInsertAsync(factOpinions, cancellationToken: cancellationToken);
 
-                _logger.LogInformation(
-                    "Lote procesado: {Inserted} registros. Total acumulado: {Total}",
-                    inserted, totalInserted);
-            }
-
+            var totalInserted = factOpinions.Count;
             var elapsed = DateTime.UtcNow - startTime;
+
             _logger.LogInformation(
-                "Carga completada. {Total} registros insertados en {ElapsedMs}ms. " +
-                "Rendimiento: {RecordsPerSecond} registros/segundo",
+                "Carga BULK completada. {Total} registros insertados en {ElapsedMs}ms. " +
+                "Rendimiento: {RecordsPerSecond:F2} registros/segundo",
                 totalInserted,
                 elapsed.TotalMilliseconds,
                 totalInserted / elapsed.TotalSeconds);
@@ -85,238 +89,189 @@ public class DataLoader : IDataLoader
         }
     }
 
-    private async Task<int> ProcessBatchAsync(
-        List<OpinionDto> batch,
+    private async Task ProcessProductDimensionBulkAsync(
+        List<OpinionDto> opinions,
         CancellationToken cancellationToken)
     {
-        var factOpinions = new List<FactOpinion>();
-
-        foreach (var opinion in batch)
-        {
-            // Obtener o crear las claves de las dimensiones
-            var productKey = await GetOrCreateProductKeyAsync(opinion, cancellationToken);
-            var customerKey = await GetOrCreateCustomerKeyAsync(opinion, cancellationToken);
-            var dateKey = await GetOrCreateDateKeyAsync(opinion.OpinionDate, cancellationToken);
-            var channelKey = await GetOrCreateChannelKeyAsync(opinion, cancellationToken);
-
-            // Crear el registro de hecho
-            var factOpinion = new FactOpinion
+        // Extraer productos únicos sin bucles
+        var uniqueProducts = opinions
+            .Select(o => new
             {
-                ProductKey = productKey,
-                CustomerKey = customerKey,
-                DateKey = dateKey,
-                ChannelKey = channelKey,
-                Rating = opinion.Rating,
-                SentimentScore = opinion.SentimentScore,
-                OpinionCount = 1
-            };
+                o.SourceProductId,
+                o.ProductName,
+                o.ProductCategory,
+                o.ProductBrand
+            })
+            .Distinct()
+            .Select(p => new DimProduct
+            {
+                SourceProductId = p.SourceProductId,
+                ProductName = p.ProductName,
+                ProductCategory = p.ProductCategory,
+                ProductBrand = p.ProductBrand
+            })
+            .ToList();
 
-            factOpinions.Add(factOpinion);
-        }
+        // Bulk insert o update de todos los productos de una vez
+        await _context.BulkInsertOrUpdateAsync(
+            uniqueProducts,
+            new BulkConfig
+            {
+                UpdateByProperties = new List<string> { nameof(DimProduct.SourceProductId), nameof(DimProduct.ProductName) },
+                PropertiesToIncludeOnUpdate = new List<string> { nameof(DimProduct.ProductCategory), nameof(DimProduct.ProductBrand) }
+            },
+            cancellationToken: cancellationToken);
 
-        // Bulk insert de hechos
-        await _context.FactOpinions.AddRangeAsync(factOpinions, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        return factOpinions.Count;
+        _logger.LogInformation("Dimensión Productos procesada: {Count} registros únicos", uniqueProducts.Count);
     }
 
-    private async Task PreloadDimensionCachesAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Precargando cachés de dimensiones...");
-
-        // Cargar productos
-        var products = await _context.DimProducts
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-        foreach (var product in products)
-        {
-            var key = $"{product.SourceProductId}_{product.ProductName}";
-            _productCache.TryAdd(key, product.ProductKey);
-        }
-
-        // Cargar clientes
-        var customers = await _context.DimCustomers
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-        foreach (var customer in customers)
-        {
-            var key = $"{customer.SourceCustomerId}_{customer.CustomerName}";
-            _customerCache.TryAdd(key, customer.CustomerKey);
-        }
-
-        // Cargar fechas
-        var dates = await _context.DimDates
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-        foreach (var date in dates)
-        {
-            _dateCache.TryAdd(date.DateKey, date.DateKey);
-        }
-
-        // Cargar canales
-        var channels = await _context.DimChannels
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-        foreach (var channel in channels)
-        {
-            _channelCache.TryAdd(channel.ChannelName, channel.ChannelKey);
-        }
-
-        _logger.LogInformation(
-            "Cachés precargados: {Products} productos, {Customers} clientes, " +
-            "{Dates} fechas, {Channels} canales",
-            _productCache.Count, _customerCache.Count, _dateCache.Count, _channelCache.Count);
-    }
-
-    private async Task<int> GetOrCreateProductKeyAsync(
-        OpinionDto opinion,
+    private async Task ProcessCustomerDimensionBulkAsync(
+        List<OpinionDto> opinions,
         CancellationToken cancellationToken)
     {
-        var cacheKey = $"{opinion.SourceProductId}_{opinion.ProductName}";
+        // Extraer clientes únicos sin bucles
+        var uniqueCustomers = opinions
+            .Select(o => new
+            {
+                o.SourceCustomerId,
+                o.CustomerName,
+                o.Country,
+                o.City,
+                o.Segment,
+                o.AgeRange
+            })
+            .Distinct()
+            .Select(c => new DimCustomer
+            {
+                SourceCustomerId = c.SourceCustomerId,
+                CustomerName = c.CustomerName,
+                Country = c.Country,
+                City = c.City,
+                Segment = c.Segment,
+                AgeRange = c.AgeRange
+            })
+            .ToList();
 
-        if (_productCache.TryGetValue(cacheKey, out var existingKey))
-        {
-            return existingKey;
-        }
+        // Bulk insert o update de todos los clientes de una vez
+        await _context.BulkInsertOrUpdateAsync(
+            uniqueCustomers,
+            new BulkConfig
+            {
+                UpdateByProperties = new List<string> { nameof(DimCustomer.SourceCustomerId), nameof(DimCustomer.CustomerName) },
+                PropertiesToIncludeOnUpdate = new List<string>
+                {
+                    nameof(DimCustomer.Country),
+                    nameof(DimCustomer.City),
+                    nameof(DimCustomer.Segment),
+                    nameof(DimCustomer.AgeRange)
+                }
+            },
+            cancellationToken: cancellationToken);
 
-        // Buscar en la base de datos
-        var existing = await _context.DimProducts
-            .FirstOrDefaultAsync(
-                p => p.SourceProductId == opinion.SourceProductId &&
-                     p.ProductName == opinion.ProductName,
+        _logger.LogInformation("Dimensión Clientes procesada: {Count} registros únicos", uniqueCustomers.Count);
+    }
+
+    private async Task ProcessDateDimensionBulkAsync(
+        List<OpinionDto> opinions,
+        CancellationToken cancellationToken)
+    {
+        // Extraer fechas únicas sin bucles
+        var uniqueDates = opinions
+            .Select(o => o.OpinionDate.Date)
+            .Distinct()
+            .Select(date => new DimDate
+            {
+                DateKey = int.Parse(date.ToString("yyyyMMdd")),
+                FullDate = date,
+                DayOfMonth = date.Day,
+                MonthNumber = date.Month,
+                MonthName = date.ToString("MMMM"),
+                Quarter = (date.Month - 1) / 3 + 1,
+                Year = date.Year
+            })
+            .ToList();
+
+        // Bulk insert o update de todas las fechas de una vez
+        await _context.BulkInsertOrUpdateAsync(
+            uniqueDates,
+            new BulkConfig
+            {
+                UpdateByProperties = new List<string> { nameof(DimDate.DateKey) }
+            },
+            cancellationToken: cancellationToken);
+
+        _logger.LogInformation("Dimensión Fechas procesada: {Count} registros únicos", uniqueDates.Count);
+    }
+
+    private async Task ProcessChannelDimensionBulkAsync(
+        List<OpinionDto> opinions,
+        CancellationToken cancellationToken)
+    {
+        // Extraer canales únicos sin bucles
+        var uniqueChannels = opinions
+            .Select(o => new { o.ChannelName, o.ChannelType })
+            .Distinct()
+            .Select(c => new DimChannel
+            {
+                ChannelName = c.ChannelName,
+                ChannelType = c.ChannelType
+            })
+            .ToList();
+
+        // Bulk insert o update de todos los canales de una vez
+        await _context.BulkInsertOrUpdateAsync(
+            uniqueChannels,
+            new BulkConfig
+            {
+                UpdateByProperties = new List<string> { nameof(DimChannel.ChannelName) },
+                PropertiesToIncludeOnUpdate = new List<string> { nameof(DimChannel.ChannelType) }
+            },
+            cancellationToken: cancellationToken);
+
+        _logger.LogInformation("Dimensión Canales procesada: {Count} registros únicos", uniqueChannels.Count);
+    }
+
+    private async Task<Dictionary<string, int>> LoadProductLookupAsync(CancellationToken cancellationToken)
+    {
+        // Cargar todos los productos y crear lookup en una sola operación (sin bucles)
+        return await _context.DimProducts
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                p => $"{p.SourceProductId}_{p.ProductName}",
+                p => p.ProductKey,
                 cancellationToken);
-
-        if (existing != null)
-        {
-            _productCache.TryAdd(cacheKey, existing.ProductKey);
-            return existing.ProductKey;
-        }
-
-        // Crear nuevo producto
-        var newProduct = new DimProduct
-        {
-            SourceProductId = opinion.SourceProductId,
-            ProductName = opinion.ProductName,
-            ProductCategory = opinion.ProductCategory,
-            ProductBrand = opinion.ProductBrand
-        };
-
-        _context.DimProducts.Add(newProduct);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _productCache.TryAdd(cacheKey, newProduct.ProductKey);
-        return newProduct.ProductKey;
     }
 
-    private async Task<int> GetOrCreateCustomerKeyAsync(
-        OpinionDto opinion,
-        CancellationToken cancellationToken)
+    private async Task<Dictionary<string, int>> LoadCustomerLookupAsync(CancellationToken cancellationToken)
     {
-        var cacheKey = $"{opinion.SourceCustomerId}_{opinion.CustomerName}";
-
-        if (_customerCache.TryGetValue(cacheKey, out var existingKey))
-        {
-            return existingKey;
-        }
-
-        var existing = await _context.DimCustomers
-            .FirstOrDefaultAsync(
-                c => c.SourceCustomerId == opinion.SourceCustomerId &&
-                     c.CustomerName == opinion.CustomerName,
+        // Cargar todos los clientes y crear lookup en una sola operación (sin bucles)
+        return await _context.DimCustomers
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                c => $"{c.SourceCustomerId}_{c.CustomerName}",
+                c => c.CustomerKey,
                 cancellationToken);
-
-        if (existing != null)
-        {
-            _customerCache.TryAdd(cacheKey, existing.CustomerKey);
-            return existing.CustomerKey;
-        }
-
-        var newCustomer = new DimCustomer
-        {
-            SourceCustomerId = opinion.SourceCustomerId,
-            CustomerName = opinion.CustomerName,
-            Country = opinion.Country,
-            City = opinion.City,
-            Segment = opinion.Segment,
-            AgeRange = opinion.AgeRange
-        };
-
-        _context.DimCustomers.Add(newCustomer);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _customerCache.TryAdd(cacheKey, newCustomer.CustomerKey);
-        return newCustomer.CustomerKey;
     }
 
-    private async Task<int> GetOrCreateDateKeyAsync(
-        DateTime date,
-        CancellationToken cancellationToken)
+    private async Task<Dictionary<int, int>> LoadDateLookupAsync(CancellationToken cancellationToken)
     {
-        var dateKey = int.Parse(date.ToString("yyyyMMdd"));
-
-        if (_dateCache.ContainsKey(dateKey))
-        {
-            return dateKey;
-        }
-
-        var existing = await _context.DimDates
-            .FindAsync(new object[] { dateKey }, cancellationToken);
-
-        if (existing != null)
-        {
-            _dateCache.TryAdd(dateKey, dateKey);
-            return dateKey;
-        }
-
-        var newDate = new DimDate
-        {
-            DateKey = dateKey,
-            FullDate = date.Date,
-            DayOfMonth = date.Day,
-            MonthNumber = date.Month,
-            MonthName = date.ToString("MMMM"),
-            Quarter = (date.Month - 1) / 3 + 1,
-            Year = date.Year
-        };
-
-        _context.DimDates.Add(newDate);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _dateCache.TryAdd(dateKey, dateKey);
-        return dateKey;
-    }
-
-    private async Task<int> GetOrCreateChannelKeyAsync(
-        OpinionDto opinion,
-        CancellationToken cancellationToken)
-    {
-        if (_channelCache.TryGetValue(opinion.ChannelName, out var existingKey))
-        {
-            return existingKey;
-        }
-
-        var existing = await _context.DimChannels
-            .FirstOrDefaultAsync(
-                c => c.ChannelName == opinion.ChannelName,
+        // Cargar todas las fechas y crear lookup en una sola operación (sin bucles)
+        return await _context.DimDates
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                d => d.DateKey,
+                d => d.DateKey,
                 cancellationToken);
+    }
 
-        if (existing != null)
-        {
-            _channelCache.TryAdd(opinion.ChannelName, existing.ChannelKey);
-            return existing.ChannelKey;
-        }
-
-        var newChannel = new DimChannel
-        {
-            ChannelName = opinion.ChannelName,
-            ChannelType = opinion.ChannelType
-        };
-
-        _context.DimChannels.Add(newChannel);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _channelCache.TryAdd(opinion.ChannelName, newChannel.ChannelKey);
-        return newChannel.ChannelKey;
+    private async Task<Dictionary<string, int>> LoadChannelLookupAsync(CancellationToken cancellationToken)
+    {
+        // Cargar todos los canales y crear lookup en una sola operación (sin bucles)
+        return await _context.DimChannels
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                c => c.ChannelName,
+                c => c.ChannelKey,
+                cancellationToken);
     }
 }
