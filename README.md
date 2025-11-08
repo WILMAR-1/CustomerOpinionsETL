@@ -1,5 +1,3 @@
----
-
 # Customer Opinions ETL System
 
 Sistema **ETL (Extract, Transform, Load)** desarrollado en **.NET 9** para la extracción, transformación y carga de opiniones de clientes desde múltiples fuentes de datos hacia un **Data Warehouse** analítico.
@@ -82,5 +80,4 @@ dotnet run --project Presentation
 
 Proyecto académico desarrollado exclusivamente con fines educativos.
 
----
 
