@@ -33,10 +33,22 @@ public class CsvExtractor : IExtractor
         var filePath = _options.FilePath;
         if (!Path.IsPathRooted(filePath))
         {
-            // Navegar desde bin/Debug/net9.0 hasta el directorio del proyecto
             var baseDir = AppContext.BaseDirectory;
-            var projectDir = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
-            filePath = Path.Combine(projectDir, filePath);
+
+            // Primero intentar desde el directorio base (bin/Debug/net9.0)
+            // Esto funciona cuando el archivo se copia al output durante el build
+            var localPath = Path.Combine(baseDir, filePath);
+
+            if (File.Exists(localPath))
+            {
+                filePath = localPath;
+            }
+            else
+            {
+                // Si no existe localmente, navegar desde bin/Debug/net9.0 hasta el directorio del proyecto
+                var projectDir = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+                filePath = Path.Combine(projectDir, filePath);
+            }
         }
 
         _logger.LogInformation("Iniciando extracción de CSV desde: {FilePath}", filePath);
