@@ -4,11 +4,11 @@ Sistema **ETL (Extract, Transform, Load)** desarrollado en **.NET 9** para la ex
 
 ## Información del Proyecto
 
-**Institución:** Universidad
-**Asignatura:** Electiva 1 - Diseño e Implementación de Data Warehouse
+**Institución:** Instituto Tecnológico de Las Américas – ITLA
+**Asignatura:** Electiva 1 - Actividad 1: Desarrollo del Proceso ETL en .NET(Arquitectura)Tarea
 **Estudiante:** Wilmar Gómez de la Cruz (2024-0103)
 **Profesor:** Francis Ramírez
-**Periodo:** Noviembre 2025
+**Periodo:** C-3
 
 ## Descripción
 
@@ -79,5 +79,6 @@ dotnet run --project Presentation
 ## Licencia
 
 Proyecto académico desarrollado exclusivamente con fines educativos.
+
 
 
