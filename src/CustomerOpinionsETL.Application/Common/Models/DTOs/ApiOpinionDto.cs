@@ -1,4 +1,4 @@
-namespace CustomerOpinionsETL.Application.Models.Dto;
+namespace CustomerOpinionsETL.Application.Common.Models.DTOs;
 
 /// <summary>
 /// DTO para mapear la respuesta de la API

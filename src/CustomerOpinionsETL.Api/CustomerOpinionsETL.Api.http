@@ -1,0 +1,6 @@
+@CustomerOpinionsETL.Api_HostAddress = http://localhost:5074
+
+GET {{CustomerOpinionsETL.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

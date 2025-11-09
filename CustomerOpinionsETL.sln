@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CustomerOpinionsETL.Infrast
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CustomerOpinionsETL.Worker", "src\CustomerOpinionsETL.Worker\CustomerOpinionsETL.Worker.csproj", "{8E547CE0-7C17-4A35-96ED-D67F3083BF1B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CustomerOpinionsETL.Api", "src\CustomerOpinionsETL.Api\CustomerOpinionsETL.Api.csproj", "{CDC1516F-8069-46A1-8200-2A06828662B1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,18 @@ Global
 		{8E547CE0-7C17-4A35-96ED-D67F3083BF1B}.Release|x64.Build.0 = Release|Any CPU
 		{8E547CE0-7C17-4A35-96ED-D67F3083BF1B}.Release|x86.ActiveCfg = Release|Any CPU
 		{8E547CE0-7C17-4A35-96ED-D67F3083BF1B}.Release|x86.Build.0 = Release|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Debug|x64.Build.0 = Debug|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Debug|x86.Build.0 = Debug|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Release|x64.ActiveCfg = Release|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Release|x64.Build.0 = Release|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Release|x86.ActiveCfg = Release|Any CPU
+		{CDC1516F-8069-46A1-8200-2A06828662B1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +94,6 @@ Global
 		{44ABA663-1804-4C69-A074-BC0165BD2640} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{2D6BB44C-5746-4248-BEDD-8095E0E63CE5} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{8E547CE0-7C17-4A35-96ED-D67F3083BF1B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{CDC1516F-8069-46A1-8200-2A06828662B1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

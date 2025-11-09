@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using CustomerOpinionsETL.Application.Models.Dto;
+using CustomerOpinionsETL.Application.Common.Models.DTOs;
 using CustomerOpinionsETL.Domain.Entities;
 using CustomerOpinionsETL.Domain.Interfaces;
 using CustomerOpinionsETL.Infrastructure.Configuration;
