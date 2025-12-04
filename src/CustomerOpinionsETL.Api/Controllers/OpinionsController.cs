@@ -1,6 +1,7 @@
 using CustomerOpinionsETL.Application.Common.Models;
 using CustomerOpinionsETL.Application.Common.Models.DTOs;
 using CustomerOpinionsETL.Application.Features.Opinions.Queries.SearchOpinions;
+using CustomerOpinionsETL.Application.Features.Opinions.Queries.ExportOpinions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -111,5 +112,88 @@ public class OpinionsController : ControllerBase
             Message = "Aggregations endpoint - To be implemented",
             Success = true
         });
+    }
+
+    /// <summary>
+    /// Exportar opiniones del Data Warehouse a formato CSV
+    /// </summary>
+    /// <remarks>
+    /// Proceso inverso al ETL: extrae datos del DW y los exporta a CSV.
+    ///
+    /// **Ejemplos de uso:**
+    ///
+    /// 1. Exportar todas las opiniones (sin límite):
+    ///    POST /api/opinions/export
+    ///    {}
+    ///
+    /// 2. Exportar primeras 10,000 opiniones:
+    ///    POST /api/opinions/export
+    ///    { "Limit": 10000 }
+    ///
+    /// 3. Exportar opiniones de un rango de fechas:
+    ///    POST /api/opinions/export
+    ///    {
+    ///      "DateFrom": "2024-01-01",
+    ///      "DateTo": "2024-12-31",
+    ///      "Limit": 50000
+    ///    }
+    ///
+    /// 4. Exportar con múltiples filtros:
+    ///    POST /api/opinions/export
+    ///    {
+    ///      "DateFrom": "2024-01-01",
+    ///      "DateTo": "2024-12-31",
+    ///      "ProductCategory": "Electronics",
+    ///      "RatingMin": 4,
+    ///      "Country": "USA",
+    ///      "Limit": 100000
+    ///    }
+    ///
+    /// **Filtros disponibles:**
+    /// - Fecha: DateFrom, DateTo
+    /// - Producto: ProductName, ProductCategory, ProductBrand
+    /// - Cliente: CustomerName, Country, City, Segment
+    /// - Canal: ChannelName, ChannelType
+    /// - Métricas: RatingMin, RatingMax, SentimentScoreMin, SentimentScoreMax
+    /// - Límite: Limit (cantidad máxima de registros)
+    /// - Ordenamiento: OrderBy, OrderDirection
+    /// </remarks>
+    /// <param name="query">Parámetros de exportación y filtros</param>
+    /// <returns>Archivo CSV descargable con las opiniones</returns>
+    /// <response code="200">Archivo CSV generado exitosamente</response>
+    /// <response code="400">Parámetros de exportación inválidos o no se encontraron datos</response>
+    /// <response code="500">Error interno del servidor</response>
+    [HttpPost("export")]
+    [Produces("text/csv")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> ExportToCsv([FromBody] ExportOpinionsQuery query)
+    {
+        _logger.LogInformation(
+            "Exportación de opiniones solicitada. Limit: {Limit}, DateFrom: {DateFrom}, DateTo: {DateTo}",
+            query.Limit, query.DateFrom, query.DateTo);
+
+        var result = await _mediator.Send(query);
+
+        if (!result.Success)
+        {
+            _logger.LogWarning("Exportación falló. Error: {Error}", result.ErrorMessage);
+            return BadRequest(new
+            {
+                Success = false,
+                Message = result.ErrorMessage
+            });
+        }
+
+        _logger.LogInformation(
+            "Exportación completada. {Records} registros exportados en {TimeMs}ms",
+            result.TotalRecords,
+            result.ExportTimeMs);
+
+        return File(
+            result.CsvData,
+            "text/csv",
+            result.FileName);
     }
 }
