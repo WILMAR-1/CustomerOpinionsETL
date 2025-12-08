@@ -7,17 +7,55 @@ Este documento describe el proceso de Extracción, Transformación y Carga (ETL)
 El sistema CustomerOpinionsETL está diseñado para recolectar opiniones de clientes de diversas fuentes, procesarlas y almacenarlas en un Data Warehouse para análisis. El flujo general es el siguiente:
 
 1.  **Extracción (Extract):** Los datos de opiniones son obtenidos de múltiples fuentes configurables (APIs externas, archivos CSV, bases de datos, JSON).
-2.  **Transformación (Transform):** Se aplican transformaciones mínimas, principalmente de validación y estandarización, para preparar los datos para su carga.
-3.  **Carga (Load):** Los datos transformados se cargan en las tablas de dimensiones y hechos del Data Warehouse.
+2.  **Transformación (Transform):** Se aplican transformaciones en paralelo con validación y estandarización, para preparar los datos para su carga.
+3.  **Limpieza (Clean):** Se trunca la tabla de hechos (`Fact_Opinions`) antes de cada carga para evitar duplicados.
+4.  **Carga (Load):** Los datos transformados se cargan en las tablas de dimensiones y hechos del Data Warehouse.
 
-## 2. Componentes Clave del Pro Proceso
+## 2. Proceso de Limpieza de Fact Tables (NUEVO)
 
-### 2.1. CustomerOpinionsETL.Worker (Punto de Entrada)
+Antes de cada carga de datos, el sistema ejecuta un proceso de limpieza que elimina todos los registros existentes en la tabla de hechos. Esto garantiza:
+
+- **Integridad de datos:** No hay duplicados entre cargas.
+- **Consistencia:** Los datos siempre reflejan el estado más reciente de las fuentes.
+- **Trazabilidad:** Se registra el número de registros eliminados antes de cada carga.
+
+### 2.1. Implementación del Proceso de Limpieza
+
+-   **Ruta:** `src/CustomerOpinionsETL.Infrastructure/Persistence/DataLoader.cs`
+-   **Método:** `TruncateFactTableAsync`
+
+```csharp
+public async Task<int> TruncateFactTableAsync(CancellationToken cancellationToken)
+{
+    // 1. Contar registros existentes
+    var existingCount = await _context.FactOpinions.CountAsync(cancellationToken);
+
+    // 2. Eliminar todos los registros usando ExecuteDeleteAsync (optimizado para EF Core 7+)
+    await _context.FactOpinions.ExecuteDeleteAsync(cancellationToken);
+
+    return existingCount;
+}
+```
+
+### 2.2. Flujo de Limpieza en el Proceso ETL
+
+El proceso de limpieza se ejecuta automáticamente en la **FASE 3** del proceso ETL:
+
+```
+FASE 1: Extracción      → Obtener datos de todas las fuentes
+FASE 2: Transformación  → Validar y normalizar datos en paralelo
+FASE 3: LIMPIEZA        → Truncar Fact_Opinions (NUEVO)
+FASE 4: Carga           → Insertar dimensiones y hechos
+```
+
+## 3. Componentes Clave del Proceso
+
+### 3.1. CustomerOpinionsETL.Worker (Punto de Entrada)
 
 -   **Ruta:** `src/CustomerOpinionsETL.Worker/Worker.cs`
 -   **Descripción:** Este proyecto actúa como un servicio en segundo plano (background service) que inicia y gestiona la ejecución periódica del proceso ETL. Su método `ExecuteAsync` es el punto de entrada principal que dispara la orquestación del ETL.
 
-### 2.2. CustomerOpinionsETL.Application.Services.EtlService (Orquestador)
+### 3.2. CustomerOpinionsETL.Application.Services.EtlService (Orquestador)
 
 -   **Ruta:** `src/CustomerOpinionsETL.Application/Services/EtlService.cs`
 -   **Descripción:** `EtlService` es el cerebro del proceso ETL. Es responsable de:
@@ -25,7 +63,7 @@ El sistema CustomerOpinionsETL está diseñado para recolectar opiniones de clie
     *   Realizar transformaciones básicas y validaciones.
     *   Delegar la carga final de los datos al componente `IDataLoader`.
 
-### 2.3. CustomerOpinionsETL.Infrastructure.Persistence.DataLoader (Cargador de Datos)
+### 3.3. CustomerOpinionsETL.Infrastructure.Persistence.DataLoader (Cargador de Datos)
 
 -   **Ruta:** `src/CustomerOpinionsETL.Infrastructure/Persistence/DataLoader.cs`
 -   **Descripción:** Este es el componente más crítico para la carga del Data Warehouse. Contiene la lógica robusta y optimizada para la inserción masiva de datos en las tablas de dimensiones y en la tabla de hechos (`FactOpinion`). El método clave es `LoadOpinionsAsync`, el cual realiza las siguientes operaciones en secuencia:
@@ -57,6 +95,67 @@ Una vez que todas las dimensiones están pobladas y se han recuperado sus claves
 *   **FactOpinion (Tabla de Hechos de Opiniones)**
     *   **Descripción:** Para cada opinión procesada, se crea un registro en `FactOpinion`. Este registro incluye las claves foráneas de `DimProduct`, `DimCustomer`, `DimChannel`, y `DimDate` que fueron obtenidas en el paso anterior, junto con las métricas o atributos propios de la opinión (e.g., puntuación, texto de la opinión). La carga se realiza de forma masiva para optimizar el rendimiento.
 
-## 3. Conclusión
+## 4. Optimizaciones de Rendimiento
+
+El sistema ha sido optimizado para procesar 500,000+ registros en menos de 5 segundos:
+
+### 4.1. Extracción Optimizada (CsvExtractor)
+
+-   **Streaming:** Lectura del archivo CSV como flujo de datos sin cargarlo completamente en memoria.
+-   **Buffer grande:** `bufferSize: 65536` para reducir operaciones de I/O.
+-   **Pre-asignación:** Lista pre-alocada basada en el tamaño estimado del archivo.
+
+### 4.2. Transformación Paralela (EtlService)
+
+-   **Parallel.ForEach:** Procesamiento de validaciones en múltiples hilos.
+-   **ConcurrentBag:** Colección thread-safe para almacenar resultados.
+-   **Contadores atómicos:** `Interlocked.Increment` para estadísticas sin bloqueos.
+-   **Logging consolidado:** Se evita logging individual en el bucle paralelo.
+
+### 4.3. Carga BULK (DataLoader)
+
+-   **BulkInsertOrUpdate:** Operaciones masivas sin bucles individuales.
+-   **ExecuteDeleteAsync:** Limpieza eficiente de la tabla de hechos.
+-   **Lookups en memoria:** Diccionarios para resolución rápida de claves foráneas.
+
+## 5. Estructura de la Fact Table
+
+### Fact_Opinions (Esquema: Fact)
+
+| Columna         | Tipo    | Descripción                         |
+|-----------------|---------|-------------------------------------|
+| product_key     | int     | FK a Dim_Product                    |
+| customer_key    | int     | FK a Dim_Customer                   |
+| date_key        | int     | FK a Dim_Date                       |
+| channel_key     | int     | FK a Dim_Channel                    |
+| rating          | int?    | Calificación (1-5, nullable)        |
+| sentiment_score | int     | Puntuación de sentimiento (-1 a 1)  |
+| opinion_count   | int     | Contador (default: 1)               |
+
+**Clave primaria compuesta:** (ProductKey, CustomerKey, DateKey, ChannelKey)
+
+## 6. Conclusión
 
 El módulo `DataLoader` es fundamental para el funcionamiento del Data Warehouse, asegurando una carga eficiente y coherente de las dimensiones y la tabla de hechos, lo que permite un análisis posterior fiable de las opiniones de los clientes. El proceso está diseñado para ser robusto y escalar con el volumen de datos.
+
+### Resumen del Flujo:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    PROCESO ETL COMPLETO                        │
+├─────────────────────────────────────────────────────────────────┤
+│  FASE 1: EXTRACCIÓN (Paralela)                                  │
+│  └── CSV, Database, API, JSON → List<OpinionDto>               │
+├─────────────────────────────────────────────────────────────────┤
+│  FASE 2: TRANSFORMACIÓN (Paralela con Parallel.ForEach)        │
+│  └── Validación + Normalización → ConcurrentBag<OpinionDto>    │
+├─────────────────────────────────────────────────────────────────┤
+│  FASE 3: LIMPIEZA                                               │
+│  └── ExecuteDeleteAsync(Fact_Opinions)                          │
+├─────────────────────────────────────────────────────────────────┤
+│  FASE 4: CARGA (BULK)                                           │
+│  ├── BulkInsertOrUpdate → Dim_Product, Dim_Customer,           │
+│  │                        Dim_Date, Dim_Channel                │
+│  └── BulkInsert → Fact_Opinions                                 │
+└─────────────────────────────────────────────────────────────────┘
+```

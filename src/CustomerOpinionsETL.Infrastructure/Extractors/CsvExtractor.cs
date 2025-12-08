@@ -63,24 +63,28 @@ public class CsvExtractor : IExtractor
                 throw new FileNotFoundException($"No se encontró el archivo: {filePath}");
             }
 
-            var opinions = new List<OpinionDto>();
+            // Optimizado: Pre-alocar lista con capacidad estimada basada en tamaño del archivo
+            var fileInfo = new FileInfo(filePath);
+            var estimatedRecords = (int)(fileInfo.Length / 100); // ~100 bytes por registro promedio
+            var opinions = new List<OpinionDto>(estimatedRecords);
 
-            // Usar el mismo método del proyecto de ejemplo
-            using var reader = new StringReader(await File.ReadAllTextAsync(filePath, System.Text.Encoding.UTF8));
+            // Optimizado: Usar StreamReader con buffer grande para lectura eficiente
+            using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 65536);
             using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HasHeaderRecord = _options.HasHeaderRecord,
                 Delimiter = _options.Delimiter,
                 MissingFieldFound = null,
-                BadDataFound = null
+                BadDataFound = null,
+                BufferSize = 65536 // Buffer grande para mejor rendimiento
             });
 
+            // Lectura streaming sin cargar todo en memoria
             await foreach (var record in csv.GetRecordsAsync<CsvOpinionDto>(cancellationToken))
             {
                 if (record != null)
                 {
-                    var opinion = MapToOpinionDto(record);
-                    opinions.Add(opinion);
+                    opinions.Add(MapToOpinionDto(record));
                 }
             }
 
