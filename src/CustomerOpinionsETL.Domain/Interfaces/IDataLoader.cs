@@ -15,4 +15,12 @@ public interface IDataLoader
     /// <param name="cancellationToken">Token de cancelación</param>
     /// <returns>Número de registros insertados</returns>
     Task<int> LoadOpinionsAsync(IEnumerable<OpinionDto> opinions, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Limpia (trunca) la tabla de hechos antes de una nueva carga
+    /// IMPORTANTE: Esta operación elimina TODOS los registros de la tabla Fact_Opinions
+    /// </summary>
+    /// <param name="cancellationToken">Token de cancelación</param>
+    /// <returns>Número de registros eliminados</returns>
+    Task<int> TruncateFactTableAsync(CancellationToken cancellationToken = default);
 }

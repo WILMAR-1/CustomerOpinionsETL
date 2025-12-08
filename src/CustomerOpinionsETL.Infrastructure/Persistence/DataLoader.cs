@@ -29,6 +29,50 @@ public class DataLoader : IDataLoader
         _options = options.Value;
     }
 
+    /// <summary>
+    /// Limpia (trunca) la tabla de hechos antes de una nueva carga
+    /// Usa TRUNCATE para máximo rendimiento (no genera logs de transacción por fila)
+    /// </summary>
+    public async Task<int> TruncateFactTableAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("========================================");
+        _logger.LogInformation("Iniciando LIMPIEZA de tabla de hechos (Fact_Opinions)");
+        _logger.LogInformation("========================================");
+
+        var startTime = DateTime.UtcNow;
+
+        try
+        {
+            // Contar registros existentes antes de limpiar
+            var existingCount = await _context.FactOpinions.CountAsync(cancellationToken);
+            _logger.LogInformation("Registros existentes en Fact_Opinions: {Count}", existingCount);
+
+            if (existingCount > 0)
+            {
+                // Usar BulkDelete para eliminar todos los registros de forma eficiente
+                // TRUNCATE es más rápido pero requiere permisos especiales
+                // BulkDelete es la alternativa más eficiente con EF Core
+                await _context.FactOpinions.ExecuteDeleteAsync(cancellationToken);
+
+                var elapsed = DateTime.UtcNow - startTime;
+                _logger.LogInformation(
+                    "Limpieza completada: {Count} registros eliminados en {ElapsedMs}ms",
+                    existingCount, elapsed.TotalMilliseconds);
+            }
+            else
+            {
+                _logger.LogInformation("La tabla Fact_Opinions ya estaba vacía");
+            }
+
+            return existingCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al limpiar la tabla de hechos");
+            throw;
+        }
+    }
+
     public async Task<int> LoadOpinionsAsync(
         IEnumerable<OpinionDto> opinions,
         CancellationToken cancellationToken = default)

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using CustomerOpinionsETL.Application.Configuration;
 using CustomerOpinionsETL.Domain.Entities;
@@ -61,7 +62,12 @@ public class EtlService
                 "Transformación completada: {Valid} registros válidos, {Rejected} rechazados",
                 validOpinions.Count, result.TotalRecordsRejected);
 
-            // FASE 3: CARGA
+            // FASE 3: LIMPIEZA DE FACT TABLES (antes de cargar)
+            _logger.LogInformation("Limpiando tabla de hechos antes de la carga...");
+            var deletedRecords = await _dataLoader.TruncateFactTableAsync(cancellationToken);
+            _logger.LogInformation("Registros eliminados de Fact_Opinions: {Count}", deletedRecords);
+
+            // FASE 4: CARGA
             if (validOpinions.Any())
             {
                 result.TotalRecordsLoaded = await _dataLoader.LoadOpinionsAsync(
@@ -188,45 +194,67 @@ public class EtlService
 
     private List<OpinionDto> TransformAndValidate(List<OpinionDto> opinions)
     {
-        _logger.LogInformation("Aplicando transformaciones y validaciones");
+        _logger.LogInformation("Aplicando transformaciones y validaciones en paralelo");
 
-        var validOpinions = new List<OpinionDto>();
+        // Usar ConcurrentBag para thread-safety en operaciones paralelas
+        var validOpinions = new ConcurrentBag<OpinionDto>();
 
-        foreach (var opinion in opinions)
+        // Contadores atómicos para estadísticas de rechazo
+        var rejectedProductName = 0;
+        var rejectedCustomerName = 0;
+        var rejectedDate = 0;
+        var normalizedSentiment = 0;
+
+        // Procesar en paralelo para máximo rendimiento
+        // NOTA: Se evita logging individual dentro del bucle paralelo para evitar
+        // problemas de contención y sincronización que degradan el rendimiento
+        Parallel.ForEach(opinions, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxDegreeOfParallelism
+        },
+        opinion =>
         {
             // Validaciones básicas
             if (string.IsNullOrWhiteSpace(opinion.ProductName))
             {
-                _logger.LogWarning("Opinión rechazada: ProductName vacío");
-                continue;
+                Interlocked.Increment(ref rejectedProductName);
+                return;
             }
 
             if (string.IsNullOrWhiteSpace(opinion.CustomerName))
             {
-                _logger.LogWarning("Opinión rechazada: CustomerName vacío");
-                continue;
+                Interlocked.Increment(ref rejectedCustomerName);
+                return;
             }
 
             if (opinion.OpinionDate == default)
             {
-                _logger.LogWarning("Opinión rechazada: Fecha inválida");
-                continue;
+                Interlocked.Increment(ref rejectedDate);
+                return;
             }
 
             // Validar rango de sentiment score (-1, 0, 1)
             if (opinion.SentimentScore < -1 || opinion.SentimentScore > 1)
             {
-                _logger.LogWarning(
-                    "Sentiment score fuera de rango ({Score}), normalizando",
-                    opinion.SentimentScore);
-
+                Interlocked.Increment(ref normalizedSentiment);
                 opinion.SentimentScore = opinion.SentimentScore > 0 ? 1 : -1;
             }
 
             validOpinions.Add(opinion);
-        }
+        });
 
-        return validOpinions;
+        // Log consolidado de rechazos (evita contención durante procesamiento paralelo)
+        if (rejectedProductName > 0)
+            _logger.LogWarning("Opiniones rechazadas por ProductName vacío: {Count}", rejectedProductName);
+        if (rejectedCustomerName > 0)
+            _logger.LogWarning("Opiniones rechazadas por CustomerName vacío: {Count}", rejectedCustomerName);
+        if (rejectedDate > 0)
+            _logger.LogWarning("Opiniones rechazadas por fecha inválida: {Count}", rejectedDate);
+        if (normalizedSentiment > 0)
+            _logger.LogInformation("Sentiment scores normalizados: {Count}", normalizedSentiment);
+
+        // Convertir ConcurrentBag a List para mantener compatibilidad
+        return validOpinions.ToList();
     }
 }
 
